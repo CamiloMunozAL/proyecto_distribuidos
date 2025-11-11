@@ -12,14 +12,35 @@ Sistema distribuido de gestión de productos con arquitectura de microservicios,
 |------------|-----|-----------|-----------|
 | **web** | 10.122.112.159 | Dashboard + CRUD productos | Node.js 20 + Express:3000 |
 | **auth** | 10.122.112.106 | Autenticación JWT | Node.js 20 + Express:3001 |
-| **db1** | 10.122.112.153 | BD Productos + Usuarios | mongod:27017 (rs_products_a PRIMARY)<br>mongod:27018 (rs_products_b SECONDARY)<br>mongod:27019 (rs_users SECONDARY) |
-| **db2** | 10.122.112.233 | BD Productos | mongod:27017 (rs_products_b PRIMARY)<br>mongod:27018 (rs_products_a SECONDARY) |
-| **db3** | 10.122.112.16 | BD Usuarios + Árbitros | mongod:27017 (rs_users PRIMARY)<br>mongod:27018 (rs_products_a ARBITER)<br>mongod:27019 (rs_products_b ARBITER) |
+| **db1** | 10.122.112.153 | BD Productos + Usuarios | mongod:27017 (rs_products_a PRIMARY)<br>mongod:27018 (rs_products_b SECONDARY)<br>mongod:27019 (rs_users SECONDARY)<br>**3 instancias MongoDB** |
+| **db2** | 10.122.112.233 | BD Productos | mongod:27017 (rs_products_b PRIMARY)<br>mongod:27018 (rs_products_a SECONDARY)<br>**2 instancias MongoDB** |
+| **db3** | 10.122.112.16 | BD Usuarios + Árbitros | mongod:27017 (rs_users PRIMARY)<br>mongod:27018 (rs_products_a ARBITER)<br>mongod:27019 (rs_products_b ARBITER)<br>**3 instancias MongoDB** |
 | **incus-ui** | 10.122.112.195 | Gestión de contenedores | Incus UI nativa:8443 |
 
 ---
 
-## 🔀 Estrategia de Fragmentación (Sharding)
+## � Distribución de Instancias MongoDB
+
+**Total: 8 instancias distribuidas en 3 contenedores**
+
+| Contenedor | Instancias | Puertos | Observaciones |
+|------------|------------|---------|---------------|
+| **db1** | 3 | 27017, 27018, 27019 | Participa en los 3 replica sets |
+| **db2** | 2 | 27017, 27018 | Puerto 27019 no configurado ⚪ |
+| **db3** | 3 | 27017, 27018, 27019 | Usuarios + Árbitros |
+
+**¿Por qué db2 solo tiene 2 instancias?**
+
+El puerto 27019 en db2 no es necesario porque:
+- db2:27017 → PRIMARY de rs_products_b ✅
+- db2:27018 → SECONDARY de rs_products_a ✅
+- db2:27019 → No participa en ningún replica set ⚪
+
+Esta configuración es **eficiente** y **válida**: solo se crean las instancias que realmente se usan en la arquitectura.
+
+---
+
+## �🔀 Estrategia de Fragmentación (Sharding)
 
 ### **Tipo: Fragmentación Horizontal por Rango**
 
@@ -725,7 +746,8 @@ ab -n 5000 -c 50 -H "Authorization: Bearer $TOKEN" \
 
 ### ✅ **COMPLETADO - Sistema 100% Funcional:**
 - [x] 6 contenedores Incus creados (web, auth, db1, db2, db3, incus-ui)
-- [x] MongoDB 8.0 instalado en db1, db2, db3
+- [x] MongoDB 6.0.26 instalado en db1, db2, db3
+- [x] **8 instancias MongoDB** distribuidas (db1: 3, db2: 2, db3: 3)
 - [x] Replica Set rs_products_a configurado (db1:27017 PRIMARY, db2:27018 SECONDARY, db3:27018 ARBITER)
 - [x] Replica Set rs_products_b configurado (db2:27017 PRIMARY, db1:27018 SECONDARY, db3:27019 ARBITER)
 - [x] Replica Set rs_users configurado (db3:27017 PRIMARY, db1:27019 SECONDARY)
@@ -792,11 +814,14 @@ El sistema está **100% funcional** y listo para demostración. Accede a:
 # 2. Creación de contenedores
 ./01_create_containers.sh
 
-# 3. Instalación de MongoDB
+# 3. Instalación de MongoDB 6.0.26
 ./02_install_mongodb.sh
 
-# 4. Configuración de replica sets iniciales
+# 4. Configuración de replica sets (8 instancias)
 ./03_configure_replicas.sh
+# db1: 3 instancias (27017, 27018, 27019)
+# db2: 2 instancias (27017, 27018) ⚠️ No se usa 27019
+# db3: 3 instancias (27017, 27018, 27019)
 
 # 5. Agregar árbitros y secundario de rs_users
 ./03.2_add_arbiters_and_secondary.sh
@@ -807,8 +832,8 @@ El sistema está **100% funcional** y listo para demostración. Accede a:
 # 7. Creación de usuarios de BD
 ./05_create_db_users.sh
 
-# 8. Datos de prueba (opcional, aún no ejecutado)
-# ./06_seed_data.sh
+# 8. Datos de prueba
+./06_seed_data.sh
 
 # 9. Configuración de Incus UI
 ./07_install_incus_ui.sh
@@ -846,8 +871,14 @@ chmod +x /home/caed/Escritorio/proyecto_distribuidos/scripts/11_integration_test
 # Ver estado de todos los servicios
 incus exec web -- systemctl status web-dashboard
 incus exec auth -- systemctl status auth-service
+
+# db1: 3 instancias
 incus exec db1 -- systemctl status mongod-27017 mongod-27018 mongod-27019
+
+# db2: 2 instancias (puerto 27019 no configurado)
 incus exec db2 -- systemctl status mongod-27017 mongod-27018
+
+# db3: 3 instancias
 incus exec db3 -- systemctl status mongod-27017 mongod-27018 mongod-27019
 
 # Ver logs en tiempo real
@@ -880,6 +911,7 @@ incus exec db3 -- mongosh --port 27017 --eval "rs.status()" | grep "stateStr"
 | Requisito | Estado | Notas |
 |-----------|--------|-------|
 | 6 contenedores Incus | ✅ Completado | web, auth, db1, db2, db3, incus-ui |
+| 8 instancias MongoDB | ✅ Completado | db1: 3, db2: 2, db3: 3 |
 | Dashboard web multi-sección | ✅ Completado | Dashboard, Ventas, Admin, Marketing, Estadísticas |
 | CRUD de productos | ✅ Completado | Create, Read, Update, Delete con frontend |
 | Fragmentación de BD | ✅ Completado | Horizontal por nombre (A-M / N-Z) |

@@ -1,44 +1,58 @@
-# 🌐 Sistema Distribuido de Gestión de Productos
+# 🌐 Sistema Distribuido de Gestión de Productos con Incus
 
-Sistema distribuido con arquitectura de microservicios implementado sobre contenedores Incus, utilizando MongoDB con sharding y replica sets para alta disponibilidad.
+> **Proyecto Académico**: Arquitectura de sistema distribuido implementada sobre contenedores Incus con MongoDB, replica sets y sharding manual para alta disponibilidad.
 
-![Status](https://img.shields.io/badge/status-active-success.svg)
-![MongoDB](https://img.shields.io/badge/MongoDB-8.0-green.svg)
+![Status](https://img.shields.io/badge/status-completado-success.svg)
+![MongoDB](https://img.shields.io/badge/MongoDB-6.0-green.svg)
 ![Node.js](https://img.shields.io/badge/Node.js-20-green.svg)
-![Incus](https://img.shields.io/badge/Incus-LXD-blue.svg)
+![Incus](https://img.shields.io/badge/Incus-6.0-blue.svg)
 
 ---
 
 ## 📋 Tabla de Contenidos
 
-- [Características](#-características)
-- [Arquitectura](#-arquitectura)
-- [Requisitos](#-requisitos)
+- [Descripción del Proyecto](#-descripción-del-proyecto)
+- [Arquitectura del Sistema](#-arquitectura-del-sistema)
+- [Cumplimiento de Requisitos](#-cumplimiento-de-requisitos)
 - [Instalación](#-instalación)
 - [Uso](#-uso)
-- [Pruebas](#-pruebas)
-- [Documentación](#-documentación)
+- [Pruebas y Validación](#-pruebas-y-validación)
+- [Documentación Técnica](#-documentación-técnica)
 
 ---
 
-## ✨ Características
+## 📖 Descripción del Proyecto
 
-- ✅ **Alta Disponibilidad**: 3 replica sets con failover automático (<15 segundos)
-- ✅ **Sharding Manual**: Fragmentación horizontal por rangos alfabéticos (A-M / N-Z)
-- ✅ **Autenticación JWT**: Sistema seguro con tokens stateless
-- ✅ **Dashboard Web**: Interfaz gráfica moderna con Bootstrap y EJS
-- ✅ **Tolerancia a Fallos**: Sin pérdida de datos ante caídas de nodos (probado)
-- ✅ **Arquitectura Multi-instancia**: 9 instancias de MongoDB en 3 contenedores
-- ✅ **Replicación Sincrónica**: Lag < 1 segundo entre PRIMARY y SECONDARY
-- ✅ **APIs RESTful**: Endpoints para productos y autenticación
+Este proyecto implementa una **plataforma web distribuida** con dashboard centralizado que utiliza **6 contenedores Incus** interconectados para ofrecer:
+
+### Componentes Principales
+
+1. **Servidor Web (Dashboard)**: Aplicación Node.js/Express con dashboard multi-sección
+   - Secciones: Dashboard, Ventas, Administración, Marketing, Estadísticas
+   - **CRUD completo de productos** en la sección "Ventas"
+   - Gestión de productos: nombre, descripción, precio, categoría, stock, SKU
+
+2. **Base de Datos Fragmentada (MongoDB)**: 3 contenedores con 8 instancias MongoDB
+   - **Fragmentación horizontal** por rangos alfabéticos (A-M / N-Z)
+   - **Replica sets con failover automático** (<15 segundos)
+   - **Replicación asíncrona** con lag <1 segundo
+
+3. **Servidor de Autenticación**: Login y registro de usuarios con JWT
+   - Validación de credenciales con bcrypt
+   - Gestión de sesiones con JSON Web Tokens
+   - Base de datos de usuarios con replica set
+
+4. **Gestor Web Incus**: Interfaz gráfica para gestión de contenedores
+   - Incus UI nativa en puerto 8443
+   - Monitoreo y control de contenedores
 
 ---
 
-## 🏗️ Arquitectura
+## 🏗️ Arquitectura del Sistema
 
-### Visión General
+### Diagrama de Contenedores
 
-El sistema utiliza **6 contenedores Incus** con **9 instancias de MongoDB** distribuidas estratégicamente para lograr alta disponibilidad y sharding manual:
+El sistema utiliza **6 contenedores Incus** con **8 instancias de MongoDB** distribuidas:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -64,277 +78,394 @@ El sistema utiliza **6 contenedores Incus** con **9 instancias de MongoDB** dist
     P=PRIMARY  S=SECONDARY  A=ARBITER
 ```
 
-### Contenedores
+### Descripción de Contenedores
 
-| Contenedor | IP (ejemplo) | Rol | Servicios MongoDB |
-|------------|--------------|-----|-------------------|
-| **web** | 10.122.112.159 | Dashboard + API productos | - |
-| **auth** | 10.122.112.106 | Autenticación JWT | - |
-| **db1** | 10.122.112.153 | Nodo BD Multi-instancia | 27017 (rs_products_a PRIMARY)<br>27018 (rs_products_b SECONDARY)<br>27019 (rs_users SECONDARY) |
-| **db2** | 10.122.112.233 | Nodo BD Multi-instancia | 27017 (rs_products_b PRIMARY)<br>27018 (rs_products_a SECONDARY)<br>27019 (rs_users SECONDARY) |
-| **db3** | 10.122.112.16 | Nodo BD Multi-instancia | 27017 (rs_users PRIMARY)<br>27018 (rs_products_a ARBITER)<br>27019 (rs_products_b ARBITER) |
-| **incus-ui** | 10.122.112.195 | Gestión de contenedores | Incus UI:8443 |
+| # | Contenedor | Rol Principal | Tecnología | Puertos |
+|---|------------|---------------|------------|---------|
+| 1 | **web** | Servidor Web + Dashboard | Node.js/Express | 3000 |
+| 2 | **auth** | Servidor de Autenticación | Node.js/Express + JWT | 3001 |
+| 3 | **db1** | Base de Datos 1 (3 instancias) | MongoDB 6.0 | 27017, 27018, 27019 |
+| 4 | **db2** | Base de Datos 2 (2 instancias) | MongoDB 6.0 | 27017, 27018 |
+| 5 | **db3** | Base de Datos 3 (3 instancias) | MongoDB 6.0 | 27017, 27018, 27019 |
+| 6 | **incus-ui** | Gestor Web Incus | Incus UI | 8443 |
 
-### Replica Sets
+### Distribución de Instancias MongoDB (8 total)
 
-```
-rs_products_a (Shard A-M - Productos con nombres A-M)
-├── PRIMARY:   db1:27017  (datos + escrituras)
-├── SECONDARY: db2:27018  (datos + lecturas + failover)
-└── ARBITER:   db3:27018  (solo votación, sin datos)
-
-rs_products_b (Shard N-Z - Productos con nombres N-Z)
-├── PRIMARY:   db2:27017  (datos + escrituras)
-├── SECONDARY: db1:27018  (datos + lecturas + failover)
-└── ARBITER:   db3:27019  (solo votación, sin datos)
-
-rs_users (Autenticación - Usuarios del sistema)
-├── PRIMARY:   db3:27017  (datos + escrituras)
-└── SECONDARY: db1:27019  (datos + lecturas + failover)
-```
-
-**Ventajas de esta arquitectura:**
-- ✅ **3 nodos por contenedor**: Aprovecha recursos eficientemente
-- ✅ **Alta disponibilidad**: Cada replica set con failover automático
-- ✅ **Sin SPOF**: Fallo de cualquier contenedor no detiene el sistema
-- ✅ **Árbitros para mayoría**: Garantiza elecciones sin empates
-
-### Sharding
-
-**Estrategia de fragmentación por rangos alfabéticos:**
-
-```
-Productos A-M → rs_products_a (Shard A)
-├── PRIMARY:   db1:27017
-├── SECONDARY: db2:27018
-└── ARBITER:   db3:27018
-
-Productos N-Z → rs_products_b (Shard B)
-├── PRIMARY:   db2:27017
-├── SECONDARY: db1:27018
-└── ARBITER:   db3:27019
-```
-
-**Cómo funciona:**
-- La aplicación determina el shard según la primera letra del nombre del producto
-- Nombres A-M van al Shard A (rs_products_a)
-- Nombres N-Z van al Shard B (rs_products_b)
-- Cada shard tiene su propio replica set para alta disponibilidad
+| Contenedor | Puerto | Replica Set | Rol | Datos |
+|------------|--------|-------------|-----|-------|
+| **db1** | 27017 | rs_products_a | PRIMARY | Productos A-M |
+| **db1** | 27018 | rs_products_b | SECONDARY | Productos N-Z (réplica) |
+| **db1** | 27019 | rs_users | SECONDARY | Usuarios (réplica) |
+| **db2** | 27017 | rs_products_b | PRIMARY | Productos N-Z |
+| **db2** | 27018 | rs_products_a | SECONDARY | Productos A-M (réplica) |
+| **db3** | 27017 | rs_users | PRIMARY | Usuarios |
+| **db3** | 27018 | rs_products_a | ARBITER | Solo votación |
+| **db3** | 27019 | rs_products_b | ARBITER | Solo votación |
 
 ---
 
-## 📦 Requisitos
+## ✅ Cumplimiento de Requisitos
 
-- **Sistema Operativo**: Linux (Ubuntu 22.04+ recomendado)
+### 1️⃣ Servidor Web con Dashboard (Contenedor `web`)
+
+- ✅ **Aplicación web desarrollada**: Node.js 20 + Express 4.18
+- ✅ **Dashboard con múltiples secciones**:
+  - Dashboard principal
+  - Ventas (con CRUD de productos)
+  - Administración
+  - Marketing
+  - Estadísticas
+- ✅ **CRUD completo de productos** en sección "Ventas":
+  - **Crear**: Formulario para agregar productos (nombre, descripción, precio, categoría, stock, SKU)
+  - **Leer**: Lista completa de productos de ambos shards
+  - **Actualizar**: Edición de productos existentes
+  - **Eliminar**: Eliminación con confirmación
+- ✅ **Comunicación con BD fragmentadas**: Routing automático según primera letra del nombre
+- ✅ **Autenticación integrada**: Verificación de JWT antes de acceder a funcionalidades
+
+### 2️⃣ Base de Datos Fragmentada - Contenedor `db1` (Base de Datos 1)
+
+- ✅ **Estrategia de fragmentación**: **Horizontal por rangos alfabéticos**
+  - **Justificación**: Distribución uniforme, escalable, simple de implementar
+  - Productos A-M → Shard A (rs_products_a)
+  - Productos N-Z → Shard B (rs_products_b)
+- ✅ **Fragmento almacenado**: Productos con nombres A-M
+- ✅ **Tecnología**: MongoDB 6.0.26 con Replica Sets
+- ✅ **Replicación configurada**:
+  - Tipo: **Asíncrona** (MongoDB default)
+  - PRIMARY: db1:27017
+  - SECONDARY: db2:27018 (réplica del fragmento)
+  - ARBITER: db3:27018 (para mayoría en votaciones)
+- ✅ **Tolerancia a fallos**: Failover automático en ~15 segundos
+
+### 3️⃣ Base de Datos Fragmentada - Contenedor `db2` (Base de Datos 2)
+
+- ✅ **Fragmento almacenado**: Productos con nombres N-Z
+- ✅ **Continuidad de fragmentación**: Misma estrategia horizontal (A-M / N-Z)
+- ✅ **Replicación configurada**:
+  - Tipo: **Asíncrona**
+  - PRIMARY: db2:27017
+  - SECONDARY: db1:27018 (réplica del fragmento)
+  - ARBITER: db3:27019
+- ✅ **Alta disponibilidad**: Datos accesibles aunque db2 caiga (desde SECONDARY)
+
+### 4️⃣ Servidor de Autenticación - Contenedor `auth`
+
+- ✅ **Funcionalidad de login**: POST /auth/login con validación de credenciales
+- ✅ **Funcionalidad de registro**: POST /auth/register para nuevos usuarios
+- ✅ **Validación de credenciales**: Consulta a Base de Datos 3 (db3:27017)
+- ✅ **Gestión de sesiones**: JSON Web Tokens (JWT) con expiración 8h
+- ✅ **Comunicación con servidor web**: Middleware de autenticación en cada request
+- ✅ **Seguridad**: Contraseñas hasheadas con bcrypt (10 salt rounds)
+
+### 5️⃣ Base de Datos de Usuarios - Contenedor `db3` (Base de Datos 3)
+
+- ✅ **Información almacenada**: Usuarios, contraseñas hasheadas, emails, roles
+- ✅ **Tecnología**: MongoDB 6.0.26
+- ✅ **Esquema de seguridad**:
+  ```javascript
+  {
+    nombre: String,
+    email: String (unique index),
+    passwordHash: String (bcrypt),
+    rol: String (admin/vendedor/marketing),
+    createdAt: Date
+  }
+  ```
+- ✅ **Replicación configurada**:
+  - PRIMARY: db3:27017
+  - SECONDARY: db1:27019 (réplica completa)
+
+### 6️⃣ Gestor Web Incus - Contenedor `incus-ui`
+
+- ✅ **Interfaz gráfica instalada**: Incus UI nativa (Canonical)
+- ✅ **Puerto configurado**: 8443 (HTTPS)
+- ✅ **Funcionalidad**: Gestión visual de los 6 contenedores del proyecto
+- ✅ **Acceso**: https://[host]:8443
+
+---
+
+## 🔀 Estrategia de Fragmentación Detallada
+
+### Tipo: Fragmentación Horizontal por Rangos Alfabéticos
+
+**Criterio**: Primera letra del nombre del producto (campo `name`)
+
+```
+┌─────────────────────────────────────────────────┐
+│         Tabla Lógica: productos                 │
+│  {name, description, price, category, stock}    │
+└────────────────┬────────────────────────────────┘
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+┌──────────────┐  ┌──────────────┐
+│  Shard A-M   │  │  Shard N-Z   │
+│ rs_products_a│  │ rs_products_b│
+│              │  │              │
+│ db1:27017 P  │  │ db2:27017 P  │
+│ db2:27018 S  │  │ db1:27018 S  │
+│ db3:27018 A  │  │ db3:27019 A  │
+└──────────────┘  └──────────────┘
+```
+
+**Justificación de la elección:**
+
+| Criterio | Ventaja |
+|----------|---------|
+| **Simplicidad** | Fácil de implementar y entender para fines académicos |
+| **Balance** | Distribución uniforme en idioma español |
+| **Escalabilidad** | Fácil agregar nuevos rangos (A-G, H-M, N-T, U-Z) |
+| **Predecibilidad** | Consultas por nombre pueden ir directamente al shard correcto |
+| **Transparencia** | La aplicación controla el routing sin complejidad adicional |
+
+**Alternativas evaluadas y descartadas:**
+
+- ❌ **Por categoría**: Desbalance si hay muchos productos de una categoría
+- ❌ **Vertical**: Mayor complejidad en queries, no aporta ventajas en este caso
+- ❌ **Hash**: Menos predecible para consultas por nombre
+
+---
+
+## 📊 Configuración de Réplicas
+
+### Replica Set 1: rs_products_a (Productos A-M)
+
+```
+PRIMARY:    db1:27017  ←──┐
+                          ├─── Replicación Asíncrona
+SECONDARY:  db2:27018  ←──┤
+                          │
+ARBITER:    db3:27018  ←──┘ (votación sin datos)
+```
+
+- **Write Concern**: w=majority, wtimeout=5000ms
+- **Read Preference**: primaryPreferred
+- **Failover**: Automático con elección de nuevo PRIMARY
+
+### Replica Set 2: rs_products_b (Productos N-Z)
+
+```
+PRIMARY:    db2:27017  ←──┐
+                          ├─── Replicación Asíncrona
+SECONDARY:  db1:27018  ←──┤
+                          │
+ARBITER:    db3:27019  ←──┘ (votación sin datos)
+```
+
+- **Write Concern**: w=majority, wtimeout=5000ms
+- **Failover**: Automático con promoción de SECONDARY
+
+### Replica Set 3: rs_users (Usuarios)
+
+```
+PRIMARY:    db3:27017  ←──┐
+                          ├─── Replicación Asíncrona
+SECONDARY:  db1:27019  ←──┘
+```
+
+- **Write Concern**: w=majority
+- **Failover**: Automático (2 nodos con datos completos)
+
+---
+
+---
+
+## � Requisitos del Sistema
+
+- **Sistema Operativo**: Linux (Ubuntu 22.04+)
 - **Incus**: 6.0+
 - **Recursos mínimos**:
-  - CPU: 4+ cores (recomendado 6-8 cores)
-  - RAM: 8GB mínimo (recomendado 12-16GB)
-  - Disco: 20GB+ espacio libre
+  - CPU: 4+ cores
+  - RAM: 8GB
+  - Disco: 20GB libre
 
-**Nota importante:** El sistema usa 6 contenedores con 9 instancias de MongoDB distribuidas. Cada contenedor de base de datos ejecuta 3 instancias de MongoDB simultáneamente en diferentes puertos (27017, 27018, 27019).
+---
 
 ---
 
 ## 🚀 Instalación
 
-### Instalación Automatizada Completa (Recomendada)
+### Opción 1: Instalación Automática (Recomendada)
 
 ```bash
-# 1. Clonar el repositorio
-git clone <repository-url>
+# Clonar repositorio
+git clone https://github.com/CamiloMunozAL/proyecto_distribuidos
 cd proyecto_distribuidos
 
-# 2. Ejecutar script maestro de instalación
+# Ejecutar instalación completa
 chmod +x scripts/00_install_all.sh
 ./scripts/00_install_all.sh
 ```
 
-El script maestro ejecutará automáticamente todos los pasos de instalación en orden.
+El script ejecutará los 11 pasos de instalación automáticamente.
 
-### Instalación Manual Paso a Paso
-
-Si prefieres ejecutar cada paso manualmente:
+### Opción 2: Instalación Manual
 
 ```bash
-# Dar permisos de ejecución a todos los scripts
 chmod +x scripts/*.sh
 
-# 1. Configurar red Incus
+# 1-2. Configurar Incus y crear contenedores
 ./scripts/00_setup_incus.sh
-
-# 2. Crear contenedores (db1, db2, db3, auth, web, incus-ui)
 ./scripts/01_create_containers.sh
 
-# 3. Instalar MongoDB 8.0 en nodos de base de datos
+# 3-7. Configurar MongoDB con replica sets
 ./scripts/02_install_mongodb.sh
-
-# 4. Configurar servicios MongoDB (múltiples instancias por contenedor)
 ./scripts/03_configure_replicas.sh
-
-# 5. Corregir permisos (si es necesario)
-./scripts/03.1_config.sh
-
-# 6. Inicializar replica sets (PRIMARY + SECONDARY)
 ./scripts/04_init_replicasets.sh
-
-# 7. Agregar árbitros para alta disponibilidad
 ./scripts/03.2_add_arbiters_and_secondary.sh
 
-# 8. Crear usuarios de base de datos
+# 8-9. Configurar bases de datos
 ./scripts/05_create_db_users.sh
-
-# 9. Crear estructura de base de datos
 ./scripts/06_seed_data.sh
 
-# 10. Instalar servicio de autenticación JWT
+# 10-12. Instalar servicios de aplicación
 ./scripts/09_setup_auth_service.sh
-
-# 11. Instalar dashboard web
 ./scripts/10_setup_web_dashboard.sh
-./scripts/10.1_views_and_server.sh
-
-# 12. (Opcional) Habilitar Incus UI
 ./scripts/07_install_incus_ui.sh
 ```
 
-### Verificar Instalación
+### Verificación
 
 ```bash
-# Verificar contenedores activos
+# Ver contenedores
 incus list
 
 # Verificar replica sets
-incus exec db1 -- mongosh --quiet mongodb://db1:27017/?replicaSet=rs_products_a --eval "rs.status()" 2>/dev/null | grep -E "name|stateStr"
+incus exec db1 -- mongosh --port 27017 --eval "rs.status()" --quiet | grep stateStr
 ```
 
 ---
 
-## 💻 Uso
+---
 
-### Acceso al Dashboard Web
+## 💻 Uso del Sistema
 
-```
-URL: http://10.122.112.159:3000
-```
+### Acceso al Dashboard
 
-**Credenciales por defecto:**
+**URL**: `http://[IP_WEB]:3000`
+
+**Credenciales de prueba:**
 - Email: `admin@test.com`
 - Password: `admin123`
 
-### API REST - Productos
+### CRUD de Productos (Sección Ventas)
 
-#### Crear Producto (Shard A-M)
-```bash
-curl -X POST http://10.122.112.159:3000/productos/api \
-  -H "Content-Type: application/json" \
-  -H "Cookie: token=<JWT_TOKEN>" \
-  -d '{
-    "name": "Laptop Dell",
-    "description": "Laptop de alto rendimiento",
-    "price": 1299.99,
-    "category": "Electrónica",
-    "stock": 15
-  }'
-```
+1. **Crear producto**: Click en "Agregar Producto" → Llenar formulario
+2. **Ver productos**: Lista automática de ambos shards
+3. **Editar**: Click en "Editar" → Modificar campos
+4. **Eliminar**: Click en "Eliminar" → Confirmar
 
-#### Listar Productos
-```bash
-curl http://10.122.112.159:3000/productos/api \
-  -H "Cookie: token=<JWT_TOKEN>"
-```
+### Gestor Web Incus
 
-### API REST - Autenticación
+**URL**: `https://[HOST]:8443`
 
-#### Registro
-```bash
-curl -X POST http://10.122.112.106:3001/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nombre": "Usuario Nuevo",
-    "email": "usuario@example.com",
-    "password": "password123",
-    "rol": "vendedor"
-  }'
-```
-
-#### Login
-```bash
-curl -X POST http://10.122.112.106:3001/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@test.com",
-    "password": "admin123"
-  }'
-```
+Permite ver y gestionar los 6 contenedores del proyecto visualmente.
 
 ---
 
-## 🧪 Pruebas
+---
 
-### Suite de Pruebas Completa
+## 🧪 Pruebas y Validación
 
-Ver la guía completa en: **[pruebas.md](./pruebas.md)**
+### Pruebas Realizadas
+
+| # | Prueba | Resultado | Evidencia |
+|---|--------|-----------|-----------|
+| 1 | Autenticación (Login/Registro) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 2 | CRUD Productos (Crear) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 3 | CRUD Productos (Leer) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 4 | CRUD Productos (Actualizar) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 5 | CRUD Productos (Eliminar) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 6 | Fragmentación (Shard A-M) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 7 | Fragmentación (Shard N-Z) | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 8 | Replicación Shard A | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 9 | Replicación Shard B | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 10 | Replicación Usuarios | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+| 11 | Failover Automático | ✅ Exitosa | RESULTADOS_PRUEBAS.md |
+
+**Tasa de éxito: 100% (11/11)**
+
+### Prueba de Failover (Tolerancia a Fallos)
 
 ```bash
-# Prueba rápida de conectividad
-# Dashboard web
-curl -s http://10.122.112.159:3000 | grep -q "html" && echo "✅ Dashboard OK" || echo "❌ Dashboard ERROR"
-
-# Servicio de autenticación
-curl -s -X POST http://10.122.112.106:3001/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test","password":"test"}' | grep -q "error\|token" && echo "✅ Auth OK" || echo "❌ Auth ERROR"
-
-# Replica sets
-incus exec db1 -- mongosh --quiet mongodb://db1:27017/?replicaSet=rs_products_a \
-  --eval "rs.status().ok" 2>/dev/null && echo "✅ rs_products_a OK" || echo "❌ rs_products_a ERROR"
-```
-
-### Prueba de Failover
-
-```bash
-# 1. Verificar estado inicial
-incus exec db1 -- mongosh --quiet mongodb://db1:27017/?replicaSet=rs_products_a \
-  --eval "rs.status().members.forEach(m => print(m.name + ' - ' + m.stateStr))"
-
-# 2. Simular fallo del PRIMARY
+# Detener PRIMARY de Shard A
 incus stop db1
 sleep 15
 
-# 3. Verificar promoción automática
-incus exec db2 -- mongosh --quiet mongodb://db2:27018/?replicaSet=rs_products_a \
-  --eval "rs.status().members.forEach(m => print(m.name + ' - ' + m.stateStr))"
+# Verificar promoción automática
+incus exec db2 -- mongosh --port 27018 --eval "rs.status()"
+# Resultado: db2:27018 → PRIMARY (en ~15 segundos)
 
-# 4. Recuperar nodo
+# Recuperar nodo
 incus start db1
+# Resultado: db1:27017 → SECONDARY (sincronización automática)
 ```
 
-**Resultado esperado:** db2:27018 se convierte en PRIMARY automáticamente (~15 segundos).
+✅ **Sin pérdida de datos** en failover
 
-### Resultados de Pruebas
+### Guía Completa de Pruebas
 
-✅ **11/11 pruebas exitosas (100%)**
-- Autenticación JWT funcional
-- CRUD completo con routing automático
-- Sharding operacional (1 producto por shard)
-- Replicación < 1 segundo de lag
-- Failover automático sin pérdida de datos
-
-Ver resultados detallados en `RESULTADOS_PRUEBAS.md`.
+Ver documento: **[pruebas.md](./pruebas.md)** para ejecutar todas las validaciones paso a paso.
 
 ---
 
 ## 📚 Documentación
 
-### Documentos Disponibles
+---
 
-- **[ARQUITECTURA.md](./ARQUITECTURA.md)**: Diseño técnico completo del sistema
-- **[uso.md](./uso.md)**: Guía detallada de uso y operación
-- **[pruebas.md](./pruebas.md)**: Guía de validación con resultados
-- **[RESULTADOS_PRUEBAS.md](./RESULTADOS_PRUEBAS.md)**: Evidencia de pruebas ejecutadas
-- **[Incus.md](./Incus.md)**: Configuración de contenedores Incus
-- **[DocumentoGuia.md](./DocumentoGuia.md)**: Guía de desarrollo
+## 📚 Documentación Técnica
+
+| Documento | Descripción |
+|-----------|-------------|
+| [ARQUITECTURA.md](./ARQUITECTURA.md) | Diseño técnico detallado con diagramas |
+| [pruebas.md](./pruebas.md) | Guía de validación paso a paso |
+| [RESULTADOS_PRUEBAS.md](./RESULTADOS_PRUEBAS.md) | Evidencia de las 11 pruebas (100% exitosas) |
+| [explain.md](./guides/explain.md) | Explicación de la arquitectura de BD |
+| [SCRIPTS.md](./SCRIPTS.md) | Documentación de scripts de instalación |
+
+---
+
+## 📊 Métricas del Sistema
+
+| Métrica | Valor |
+|---------|-------|
+| **Contenedores Incus** | 6 (web, auth, db1, db2, db3, incus-ui) |
+| **Instancias MongoDB** | 8 distribuidas (db1:3, db2:2, db3:3) |
+| **Replica Sets** | 3 con failover automático |
+| **Tiempo de failover** | ~15 segundos |
+| **Lag de replicación** | <1 segundo |
+| **Tasa de éxito pruebas** | 100% (11/11) |
+| **MongoDB** | 6.0.26 Community |
+| **Node.js** | 20 LTS |
+
+---
+
+## 👥 Información Académica
+
+**Proyecto**: Sistema Distribuido con Incus y MongoDB  
+**Objetivo**: Implementar arquitectura distribuida con fragmentación y replicación  
+**Año**: 2025  
+**Estado**: ✅ Completado y validado (100% funcional)
+
+---
+
+## 📝 Resumen Ejecutivo
+
+Este proyecto implementa exitosamente todos los requisitos académicos:
+
+✅ **6 contenedores Incus** interconectados  
+✅ **Dashboard web** con múltiples secciones (Ventas, Admin, Marketing, Estadísticas)  
+✅ **CRUD completo** de productos en sección Ventas  
+✅ **Fragmentación horizontal** de BD por rangos alfabéticos (A-M / N-Z)  
+✅ **Replicación asíncrona** configurada en todos los fragmentos  
+✅ **Servidor de autenticación** con login/registro y JWT  
+✅ **Base de datos de usuarios** con replica set  
+✅ **Gestor web Incus UI** en puerto 8443  
+✅ **Tolerancia a fallos** probada con failover automático  
+✅ **Sin pérdida de datos** en escenarios de fallo  
+
+**Resultado**: Sistema distribuido completamente funcional con alta disponibilidad y escalabilidad.
 
 ### Métricas del Sistema
 
@@ -466,49 +597,3 @@ Este proyecto es parte de un trabajo académico sobre sistemas distribuidos.
 Este proyecto es de uso académico.
 
 ---
-
-## 👨‍💻 Autor
-
-Proyecto de Sistemas Distribuidos  
-Universidad: [Tu Universidad]  
-Año: 2025
-
----
-
-## 🎯 Estado del Proyecto
-
-✅ **Sistema completamente funcional y validado**
-
-**Componentes verificados:**
-- ✅ Alta disponibilidad con failover automático (<15s)
-- ✅ Tolerancia a fallos sin pérdida de datos
-- ✅ Sharding manual operacional (A-M / N-Z)
-- ✅ Replicación sincrónica (<1s lag)
-- ✅ 3 replica sets funcionando correctamente
-- ✅ Autenticación JWT funcional
-- ✅ Dashboard web completo
-- ✅ APIs RESTful operacionales
-- ✅ Suite de pruebas: 11/11 exitosas (100%)
-
-**Métricas de rendimiento:**
-- Tiempo de failover: ~15 segundos
-- Lag de replicación: <1 segundo
-- Contenedores activos: 6/6
-- Instancias MongoDB: 9/9 operacionales
-
-**Última actualización:** 11 de noviembre de 2025  
-**Versión:** 1.0.0
-
----
-
-## 📝 Changelog
-
-### v1.0.0 - 11 de noviembre de 2025
-- ✅ Sistema distribuido completo implementado
-- ✅ 6 contenedores con 9 instancias de MongoDB
-- ✅ 3 replica sets con failover automático
-- ✅ Sharding manual por rangos alfabéticos
-- ✅ Dashboard web con autenticación JWT
-- ✅ Suite de pruebas completa (11/11 exitosas)
-- ✅ Documentación técnica completa
-- ✅ Scripts de instalación automatizados
