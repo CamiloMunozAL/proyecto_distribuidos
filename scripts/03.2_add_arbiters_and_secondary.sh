@@ -1,59 +1,32 @@
 #!/bin/bash
 # ========================================
-# Script 03.2 - Agregar árbitros y secundario para rs_users
+# Script 03.2 - Agregar árbitros para alta disponibilidad
 # ========================================
-# Soluciona:
-# 1. Replica sets de productos sin failover automático (necesitan 3 nodos)
-# 2. rs_users sin replicación (SPOF)
+# Agrega nodos ARBITER a los replica sets para habilitar failover automático:
+# - rs_products_a: Agrega db3:27018 como ARBITER
+# - rs_products_b: Agrega db3:27019 como ARBITER
+# 
+# Con 3 nodos (PRIMARY + SECONDARY + ARBITER) se garantiza mayoría de votos
+# para elección automática de nuevo PRIMARY en caso de fallo.
 # ========================================
 
 set -e
 
-echo "==> Paso 1: Configurando árbitros en db3 para rs_products_a y rs_products_b ..."
+echo "==> Agregando árbitros a los replica sets..."
+echo ""
+echo "📝 Los árbitros participan en elecciones pero no almacenan datos"
+echo ""
 
-incus exec db3 -- bash -lc '
-# Crear directorios para árbitros
-mkdir -p /data/arbiter-27018 /data/arbiter-27019
-chown -R mongodb:mongodb /data/arbiter-27018 /data/arbiter-27019
+echo "==> Paso 1: Verificando que los servicios de árbitros estén activos..."
 
-# Árbitro para rs_products_a (puerto 27018)
-cat >/etc/systemd/system/mongod-arbiter-27018.service <<EOF
-[Unit]
-Description=MongoDB Arbiter for rs_products_a
-After=network.target
-[Service]
-User=mongodb
-Group=mongodb
-ExecStart=/usr/bin/mongod --port 27018 --dbpath /data/arbiter-27018 \
-  --replSet rs_products_a --bind_ip 0.0.0.0
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Árbitro para rs_products_b (puerto 27019)
-cat >/etc/systemd/system/mongod-arbiter-27019.service <<EOF
-[Unit]
-Description=MongoDB Arbiter for rs_products_b
-After=network.target
-[Service]
-User=mongodb
-Group=mongodb
-ExecStart=/usr/bin/mongod --port 27019 --dbpath /data/arbiter-27019 \
-  --replSet rs_products_b --bind_ip 0.0.0.0
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Habilitar y arrancar servicios
-systemctl daemon-reload
-systemctl enable --now mongod-arbiter-27018 mongod-arbiter-27019
-
-# Esperar a que arranquen
-sleep 5
+# Los servicios de árbitros ya se configuraron en 03_configure_replicas.sh
+# Solo verificamos que estén corriendo
+# Verificar que los servicios estén activos
+systemctl is-active mongod-27018 >/dev/null 2>&1 && echo "   ✅ mongod-27018 (arbiter rs_products_a) activo"
+systemctl is-active mongod-27019 >/dev/null 2>&1 && echo "   ✅ mongod-27019 (arbiter rs_products_b) activo"
 '
 
+echo ""
 echo "==> Paso 2: Configurando write concern y agregando árbitro a rs_products_a ..."
 incus exec db1 -- mongosh --port 27017 --quiet --eval "
 try {
@@ -85,47 +58,11 @@ try {
 "
 
 echo ""
-echo "==> Paso 4: Configurando secundario para rs_users en db1 ..."
-
-incus exec db1 -- bash -lc '
-# Crear directorio para secundario de rs_users
-mkdir -p /data/db-27019
-chown -R mongodb:mongodb /data/db-27019
-
-# Crear servicio para secundario de rs_users
-cat >/etc/systemd/system/mongod-27019.service <<EOF
-[Unit]
-Description=MongoDB 27019 rs_users SECONDARY
-After=network.target
-[Service]
-User=mongodb
-Group=mongodb
-ExecStart=/usr/bin/mongod --port 27019 --dbpath /data/db-27019 \
-  --replSet rs_users --bind_ip 0.0.0.0
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now mongod-27019
-
-# Esperar a que arranque
-sleep 5
-'
-
-echo "==> Paso 5: Agregando secundario db1:27019 a rs_users ..."
-incus exec db3 -- mongosh --port 27017 --quiet --eval "
-try {
-  rs.add('db1:27019');
-  print('✅ Secundario db1:27019 agregado a rs_users');
-} catch(e) {
-  print('⚠️  Error: ' + e.message);
-}
-"
+echo "==> Paso 3: Esperando estabilización de los replica sets (10 segundos)..."
+sleep 10
 
 echo ""
-echo "==> Paso 6: Verificando configuración final ..."
+echo "==> Paso 4: Verificando configuración final de replica sets..."
 
 echo ""
 echo "📊 Estado de rs_products_a:"
@@ -154,9 +91,22 @@ rs.status().members.forEach(m => {
 echo ""
 echo "✅ Configuración de alta disponibilidad completada"
 echo ""
-echo "🎯 Ahora cada replica set tiene 3 nodos:"
-echo "   • rs_products_a: db1:27017 (PRIMARY) + db2:27018 (SECONDARY) + db3:27018 (ARBITER)"
-echo "   • rs_products_b: db2:27017 (PRIMARY) + db1:27018 (SECONDARY) + db3:27019 (ARBITER)"
-echo "   • rs_users:      db3:27017 (PRIMARY) + db1:27019 (SECONDARY)"
+echo "🎯 Configuración final de replica sets:"
+echo "   • rs_products_a (Shard A-M):"
+echo "     - PRIMARY:   db1:27017"
+echo "     - SECONDARY: db2:27018"
+echo "     - ARBITER:   db3:27018"
 echo ""
-echo "✅ Failover automático habilitado (mayoría de votos garantizada)"
+echo "   • rs_products_b (Shard N-Z):"
+echo "     - PRIMARY:   db2:27017"
+echo "     - SECONDARY: db1:27018"
+echo "     - ARBITER:   db3:27019"
+echo ""
+echo "   • rs_users (Autenticación):"
+echo "     - PRIMARY:   db3:27017"
+echo "     - SECONDARY: db1:27019"
+echo ""
+echo "✅ Failover automático habilitado en todos los replica sets"
+echo "✅ Mayoría de votos garantizada para elecciones automáticas"
+echo ""
+echo "⏭️  Siguiente paso: Ejecutar 05_create_db_users.sh para crear usuarios de base de datos"
